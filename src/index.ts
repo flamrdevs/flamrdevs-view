@@ -11,7 +11,7 @@ const app = new Hono()
 
   .use("*", secureHeaders())
 
-  .get("/", (ctx) => ctx.json({ name: "api" }))
+  .get("/", (ctx) => ctx.json({ name: "view" }))
   .notFound((ctx) => ctx.json({ message: "Not found" }, 404))
   .onError((error: unknown, ctx) => {
     let status = 500;
