@@ -8,11 +8,21 @@ const app = new Hono()
   .use("*", cors({ origin: "*" }))
 
   .get("/health", (ctx) => {
-    console.log({ url: ctx.req.url });
     return ctx.json({ ok: true }, 200);
   })
 
-  .use("*", secureHeaders())
+  .use("*", secureHeaders({ crossOriginResourcePolicy: false }))
+
+  .get("/github", async (ctx) => {
+    return ctx.body(
+      `<svg xmlns="http://www.w3.org/2000/svg" height="1" width="100%"><line x1="0" y1="0" x2="100%" y2="0" stroke="#74b816" stroke-width="1" /></svg>`,
+      200,
+      {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "max-age=0, no-cache, no-store, must-revalidate",
+      }
+    );
+  })
 
   .get("/", (ctx) => ctx.json({ name: "view" }))
   .notFound((ctx) => ctx.json({ message: "Not found" }, 404))
