@@ -1,2 +1,7 @@
 name = "view"
 compatibility_date = "2023-11-04"
+
+[vars]
+SECRET = ""
+UPSTASH_REDIS_REST_URL = ""
+UPSTASH_REDIS_REST_TOKEN = ""
