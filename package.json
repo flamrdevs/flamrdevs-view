@@ -6,6 +6,7 @@
     "deploy": "wrangler deploy src/index.ts"
   },
   "dependencies": {
+    "@upstash/redis": "^1.24.3",
     "hono": "^3.9.2"
   },
   "devDependencies": {
