@@ -14,39 +14,13 @@ type Bindings = {
 
 export interface Env extends Bindings {}
 
-const useRedis = <E extends { Bindings: Bindings }>(ctx: Context<E>) => Redis.fromEnv(ctx.env);
+let REDIS: Redis;
+const redisFromContext = <E extends { Bindings: Bindings }>(ctx: Context<E>) => (REDIS ??= Redis.fromEnv(ctx.env));
 
 const secret = async (ctx: Context) => {
   const formData = await ctx.req.formData();
   if (ctx.env.SECRET === `${formData.get("secret")}`) return formData;
   throw new Error("Invalid secret");
-};
-
-const svg = async (ctx: Context, callback: () => Promise<any>) => {
-  let stroke = "#6E6E6E";
-
-  try {
-    await callback();
-  } catch (error) {
-    console.error(error);
-    stroke = "#E5484D";
-  }
-
-  return ctx.body(
-    `<svg xmlns="http://www.w3.org/2000/svg" height="1" width="100%"><line x1="0" y1="0" x2="100%" y2="0" stroke="${stroke}" stroke-width="1" /></svg>`,
-    200,
-    {
-      "Content-Type": "image/svg+xml",
-      "Cache-Control": "max-age=0, no-cache, no-store, must-revalidate",
-    }
-  );
-};
-const count = async <E extends { Bindings: Bindings }>(ctx: Context<E>, key: string) => ctx.json(await useRedis(ctx).llen(key));
-const list = async <E extends { Bindings: Bindings }>(ctx: Context<E>, key: string) =>
-  ctx.json(await useRedis(ctx).lrange<number>(key, 0, -1));
-const clear = async <E extends { Bindings: Bindings }>(ctx: Context<E>, key: string) => {
-  await secret(ctx);
-  return ctx.json({ ok: (await useRedis(ctx).del(key)) > 0 });
 };
 
 type HonoEnv = { Bindings: Bindings };
@@ -57,29 +31,47 @@ const app = new Hono<HonoEnv>()
   .get("/health", (ctx) => ctx.json({ ok: true }, 200))
   .use("*", secureHeaders({ crossOriginResourcePolicy: false }));
 
-app.route(
-  "/github",
-  (() => {
-    const KEY = "github";
-    return new Hono<HonoEnv>()
-      .get("/", (ctx) => svg(ctx, () => useRedis(ctx).rpush<number>(KEY, Date.now())))
-      .get("/count", (ctx) => count(ctx, KEY))
-      .get("/list", (ctx) => list(ctx, KEY))
-      .delete("/clear", (ctx) => clear(ctx, KEY));
-  })()
-);
+(() => {
+  const profile = <T extends string>(name: T) => {
+    app.route(
+      `/${name}`,
+      (() => {
+        const KEY_TOTAL = `${name}/total`;
+        const KEY_TIMES = `${name}/times`;
+        return new Hono<HonoEnv>()
+          .get("/", async (ctx) => {
+            const redis = redisFromContext(ctx);
+            let stroke = "#6E6E6E";
+            try {
+              await Promise.all([redis.incr(KEY_TOTAL), redis.lpush<number>(KEY_TIMES, Date.now())]);
+            } catch (error) {
+              console.error(error);
+              stroke = "#E5484D";
+            }
+            return ctx.body(
+              `<svg xmlns="http://www.w3.org/2000/svg" height="1" width="100%"><line x1="0" y1="0" x2="100%" y2="0" stroke="${stroke}" stroke-width="1" /></svg>`,
+              200,
+              { "Content-Type": "image/svg+xml", "Cache-Control": "max-age=0, no-cache, no-store, must-revalidate" }
+            );
+          })
+          .get("/total", async (ctx) => ctx.json(Number(await redisFromContext(ctx).get<string>(KEY_TOTAL))))
+          .get("/times", async (ctx) => ctx.json(await redisFromContext(ctx).lrange<number>(KEY_TIMES, 0, -1)))
+          .put("/slice", async (ctx) => {
+            await secret(ctx);
+            return ctx.json({ ok: (await redisFromContext(ctx).ltrim(KEY_TIMES, 0, 999)) === "OK" });
+          })
+          .delete("/clear", async (ctx) => {
+            await secret(ctx);
+            const redis = redisFromContext(ctx);
+            return ctx.json({ ok: (await Promise.all([redis.del(KEY_TOTAL), redis.del(KEY_TIMES)])).every((deleted) => deleted > 0) });
+          });
+      })()
+    );
+  };
 
-app.route(
-  "/gitlab",
-  (() => {
-    const KEY = "gitlab";
-    return new Hono<HonoEnv>()
-      .get("/", (ctx) => svg(ctx, () => useRedis(ctx).rpush<number>(KEY, Date.now())))
-      .get("/count", (ctx) => count(ctx, KEY))
-      .get("/list", (ctx) => list(ctx, KEY))
-      .delete("/clear", (ctx) => clear(ctx, KEY));
-  })()
-);
+  profile("github");
+  profile("gitlab");
+})();
 
 app
   .get("/", (ctx) => ctx.json({ name: "view" }))
